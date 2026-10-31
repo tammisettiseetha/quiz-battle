@@ -1,0 +1,368 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quiz Battle | Multiplayer Game</title>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;font-family:Arial,sans-serif;color:#fff;min-height:100vh;
+ background:linear-gradient(135deg,#17133d,#39206d,#172d62);
+ padding:25px 15px;
+}
+.container{max-width:760px;margin:auto}
+header{text-align:center;margin:20px 0 30px}
+header h1{font-size:38px;margin:0;color:#ffe66d}
+header p{color:#ddd}
+.card{
+ background:#ffffff12;border:1px solid #ffffff30;border-radius:18px;
+ padding:24px;margin:15px 0;backdrop-filter:blur(8px)
+}
+input,button{
+ width:100%;padding:14px;border-radius:10px;border:0;
+ font-size:16px;margin-top:12px
+}
+input{background:#fff;color:#222}
+button{
+ background:#ffe66d;color:#241b4d;font-weight:bold;cursor:pointer
+}
+button:hover{background:#ffd43b}
+button:disabled{opacity:.5;cursor:not-allowed}
+.secondary{background:#8d80ff;color:white}
+.hidden{display:none!important}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+.row>*{flex:1;min-width:130px}
+.room-code{font-size:32px;letter-spacing:7px;color:#ffe66d;font-weight:bold}
+.player{
+ display:flex;justify-content:space-between;padding:12px;
+ background:#ffffff12;border-radius:9px;margin:8px 0
+}
+.question{font-size:23px;line-height:1.4;margin:20px 0}
+.option{
+ background:#fff;color:#222;text-align:left;margin:7px 0;
+ font-weight:normal
+}
+.option.selected{background:#ffe66d}
+.option:disabled{opacity:1}
+.topline{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.timer{font-size:22px;color:#ffe66d;font-weight:bold}
+.small{font-size:13px;color:#ccc}
+.notice{padding:12px;border-radius:9px;background:#ffffff18;margin-top:12px}
+footer{text-align:center;color:#bbb;font-size:12px;margin-top:30px}
+</style>
+</head>
+
+<body>
+<div class="container">
+<header>
+ <h1>⚔️ QUIZ BATTLE</h1>
+ <p>Challenge your friends. Answer fast. Become the champion!</p>
+</header>
+
+<div id="home" class="card">
+ <h2>🎮 Enter the Battle</h2>
+ <input id="playerName" maxlength="15" placeholder="Enter your player name">
+ <div class="row">
+  <button onclick="createRoom()">Create Room</button>
+  <button class="secondary" onclick="showJoin()">Join Room</button>
+ </div>
+ <div id="joinArea" class="hidden">
+  <input id="roomInput" maxlength="6" placeholder="Enter 6-character room code">
+  <button onclick="joinRoom()">Join Game</button>
+ </div>
+ <p class="small">No account needed. Play with 2–6 players.</p>
+ <div id="message" class="notice hidden"></div>
+</div>
+
+<div id="lobby" class="card hidden">
+ <h2>🏠 Waiting Room</h2>
+ <p>Share this room code with your friends:</p>
+ <div class="room-code" id="roomCode"></div>
+ <button class="secondary" onclick="copyCode()">Copy Room Code</button>
+ <h3>Players (<span id="playerCount">0</span>/6)</h3>
+ <div id="playerList"></div>
+ <p class="small">At least 2 players are required to start.</p>
+ <button id="startButton" onclick="startGame()">Start Battle</button>
+ <p id="lobbyMessage" class="small"></p>
+</div>
+
+<div id="game" class="card hidden">
+ <div class="topline">
+  <span id="questionNumber">Question 1/10</span>
+  <span class="timer" id="timer">15s</span>
+ </div>
+ <div class="question" id="questionText"></div>
+ <div id="options"></div>
+ <div id="answerMessage" class="notice hidden"></div>
+ <h3>🏆 Live Leaderboard</h3>
+ <div id="gameScores"></div>
+</div>
+
+<div id="results" class="card hidden">
+ <h2>🏆 Battle Results</h2>
+ <h1 id="winner"></h1>
+ <div id="finalScores"></div>
+ <p>Well played! Thanks for joining Quiz Battle.</p>
+ <button onclick="location.reload()">Play Again</button>
+</div>
+
+<footer>Quiz Battle • Multiplayer Quiz Game</footer>
+</div>
+
+<script>
+const firebaseConfig = {
+ apiKey: "AIzaSyC6vZkC5bD7FXbzLgSVz_2Dp0Xw6Ve_GIE",
+ authDomain: "quiz-battle-seetha.firebaseapp.com",
+ databaseURL: "https://quiz-battle-seetha-default-rtdb.asia-southeast1.firebasedatabase.app",
+ projectId: "quiz-battle-seetha",
+ storageBucket: "quiz-battle-seetha.firebasestorage.app",
+ messagingSenderId: "425241888322",
+ appId: "1:425241888322:web:5663c3b9ce09eab8c3cfdb"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.database();
+
+const questions = [
+ {q:"Which is the largest planet in our solar system?",o:["Earth","Jupiter","Mars","Venus"],a:1},
+ {q:"What is the capital of Japan?",o:["Seoul","Beijing","Tokyo","Bangkok"],a:2},
+ {q:"Which language is primarily used for web page structure?",o:["HTML","Python","SQL","C"],a:0},
+ {q:"How many sides does a hexagon have?",o:["Five","Six","Seven","Eight"],a:1},
+ {q:"Which gas do plants absorb from the atmosphere?",o:["Oxygen","Nitrogen","Carbon dioxide","Hydrogen"],a:2},
+ {q:"Who wrote the national anthem of India?",o:["Rabindranath Tagore","Mahatma Gandhi","Sarojini Naidu","Bankim Chandra"],a:0},
+ {q:"What is the boiling point of water at sea level?",o:["50°C","90°C","100°C","120°C"],a:2},
+ {q:"Which is the fastest land animal?",o:["Lion","Cheetah","Horse","Tiger"],a:1},
+ {q:"Which data structure follows FIFO?",o:["Stack","Queue","Tree","Graph"],a:1},
+ {q:"How many bits are in one byte?",o:["4","8","16","32"],a:1}
+];
+
+let uid=null, roomId=null, isHost=false, roomRef=null;
+let roomData=null, selected=false, timerInterval=null;
+let answerListener=null, roomListener=null;
+const $=id=>document.getElementById(id);
+
+function show(id){
+ ["home","lobby","game","results"].forEach(x=>$(x).classList.add("hidden"));
+ $(id).classList.remove("hidden");
+}
+function message(text){
+ $("message").textContent=text;
+ $("message").classList.remove("hidden");
+}
+function getName(){
+ return $("playerName").value.trim().replace(/[.#$[\]/]/g,"").slice(0,15);
+}
+function showJoin(){ $("joinArea").classList.remove("hidden"); }
+
+auth.signInAnonymously()
+ .then(result=>{uid=result.user.uid;})
+ .catch(error=>message("Connection error: "+error.message));
+
+function waitForAuth(){
+ return new Promise((resolve,reject)=>{
+  if(uid){resolve(uid);return;}
+  const unsub=auth.onAuthStateChanged(user=>{
+   unsub();
+   if(user){uid=user.uid;resolve(uid);}
+   else reject(new Error("Please refresh and try again."));
+  });
+ });
+}
+
+function makeCode(){
+ return Math.random().toString(36).substring(2,8).toUpperCase();
+}
+
+async function createRoom(){
+ try{
+  await waitForAuth();
+  const name=getName();
+  if(!name){message("Please enter your name first.");return;}
+  const code=makeCode();
+  const ref=db.ref("rooms/"+code);
+  const result=await ref.transaction(current=>{
+   if(current!==null)return;
+   return {
+    hostUid:uid,status:"waiting",questionIndex:0,
+    questionStartedAt:0,
+    players:{[uid]:{name,score:0,joinedAt:Date.now()}}
+   };
+  });
+  if(!result.committed){message("Please try creating the room again.");return;}
+  roomId=code;isHost=true;listenRoom();
+ }catch(e){message("Could not create room: "+e.message);}
+}
+
+async function joinRoom(){
+ try{
+  await waitForAuth();
+  const name=getName();
+  const code=$("roomInput").value.trim().toUpperCase();
+  if(!name){message("Please enter your name first.");return;}
+  if(!/^[A-Z0-9]{6}$/.test(code)){message("Enter a valid 6-character code.");return;}
+  const ref=db.ref("rooms/"+code);
+  const snap=await ref.once("value");
+  const data=snap.val();
+  if(!data){message("Room not found. Check the code.");return;}
+  if(data.status!=="waiting"){message("This game has already started.");return;}
+  if(Object.keys(data.players||{}).length>=6){message("Room is full.");return;}
+  const result=await ref.child("players/"+uid).transaction(current=>{
+   if(current!==null)return current;
+   return {name,score:0,joinedAt:Date.now()};
+  });
+  if(!result.committed){message("Could not join. Try again.");return;}
+  roomId=code;isHost=false;listenRoom();
+ }catch(e){message("Could not join: "+e.message);}
+}
+
+function listenRoom(){
+ roomRef=db.ref("rooms/"+roomId);
+ roomListener=snap=>{
+  roomData=snap.val();
+  if(!roomData){message("This room no longer exists.");show("home");return;}
+  if(roomData.status==="waiting")renderLobby();
+  if(roomData.status==="playing")renderGame();
+  if(roomData.status==="finished")renderResults();
+ };
+ roomRef.on("value",roomListener);
+}
+
+function renderLobby(){
+ show("lobby");
+ $("roomCode").textContent=roomId;
+ const players=Object.entries(roomData.players||{});
+ $("playerCount").textContent=players.length;
+ $("playerList").innerHTML=players.map(([id,p])=>
+  `<div class="player"><span>${escapeHtml(p.name)} ${id===roomData.hostUid?"👑":""}</span><b>${p.score||0} pts</b></div>`
+ ).join("");
+ $("startButton").disabled=!isHost||players.length<2;
+ $("startButton").textContent=isHost?"Start Battle":"Waiting for host...";
+ $("lobbyMessage").textContent=isHost?"You are the host. Start when everyone has joined.":"Waiting for the host to start the game.";
+}
+
+function escapeHtml(value){
+ return String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+function copyCode(){
+ navigator.clipboard.writeText(roomId)
+  .then(()=>alert("Room code copied: "+roomId))
+  .catch(()=>alert("Your room code is: "+roomId));
+}
+
+async function startGame(){
+ if(!isHost||!roomData||Object.keys(roomData.players||{}).length<2)return;
+ await roomRef.update({
+  status:"playing",questionIndex:0,
+  questionStartedAt:Date.now()
+ });
+}
+
+function renderGame(){
+ show("game");
+ const index=roomData.questionIndex;
+ if(index>=questions.length){if(isHost)finishGame();return;}
+ const q=questions[index];
+ $("questionNumber").textContent="Question "+(index+1)+"/"+questions.length;
+ $("questionText").textContent=q.q;
+ const alreadyAnswered=roomData.answers&&roomData.answers[index]&&roomData.answers[index][uid];
+ selected=!!alreadyAnswered;
+ $("options").innerHTML=q.o.map((option,i)=>
+  `<button class="option ${alreadyAnswered&&alreadyAnswered.choice===i?"selected":""}" ${selected?"disabled":""} onclick="submitAnswer(${i})">${String.fromCharCode(65+i)}. ${escapeHtml(option)}</button>`
+ ).join("");
+ $("answerMessage").classList.toggle("hidden",!selected);
+ $("answerMessage").textContent=selected?"Answer submitted! Waiting for the next question.":"Choose your answer.";
+ renderScores($("gameScores"));
+ updateTimer();
+ if(timerInterval)clearInterval(timerInterval);
+ timerInterval=setInterval(updateTimer,500);
+}
+
+async function submitAnswer(choice){
+ if(selected||!roomData||roomData.status!=="playing")return;
+ const index=roomData.questionIndex;
+ const started=roomData.questionStartedAt;
+ const elapsed=(Date.now()-started)/1000;
+ if(elapsed>=15)return;
+ selected=true;
+ $("options").querySelectorAll("button").forEach(b=>b.disabled=true);
+ const correct=questions[index].a===choice;
+ const speedBonus=Math.max(0,Math.floor((15-elapsed)*3));
+ const points=correct?100+speedBonus:0;
+ try{
+  const answerRef=roomRef.child("answers/"+index+"/"+uid);
+  const result=await answerRef.transaction(current=>{
+   if(current!==null)return;
+   return {choice,correct,points,answeredAt:Date.now()};
+  });
+  if(result.committed&&points>0){
+   await roomRef.child("players/"+uid+"/score").transaction(score=>(score||0)+points);
+  }
+  $("answerMessage").textContent=result.committed
+   ?(correct?"Correct! +"+points+" points 🎉":"Not quite! Better luck next time.")
+   :"Your answer was already submitted.";
+  $("answerMessage").classList.remove("hidden");
+ }catch(e){
+  selected=false;
+  $("answerMessage").textContent="Could not submit. Please try again.";
+ }
+}
+
+function updateTimer(){
+ if(!roomData||roomData.status!=="playing")return;
+ const elapsed=(Date.now()-roomData.questionStartedAt)/1000;
+ const remaining=Math.max(0,15-Math.floor(elapsed));
+ $("timer").textContent=remaining+"s";
+ if(isHost&&elapsed>=15)advanceQuestion();
+}
+
+let advancing=false;
+async function advanceQuestion(){
+ if(advancing||!isHost||!roomData||roomData.status!=="playing")return;
+ advancing=true;
+ const index=roomData.questionIndex;
+ try{
+  await roomRef.transaction(data=>{
+   if(!data||data.status!=="playing"||data.questionIndex!==index)return;
+   data.questionIndex=index+1;
+   data.questionStartedAt=Date.now();
+   return data;
+  });
+ }finally{advancing=false;}
+}
+
+async function finishGame(){
+ if(!isHost)return;
+ await roomRef.update({status:"finished"});
+}
+
+function renderScores(target){
+ const players=Object.values(roomData.players||{}).sort((a,b)=>(b.score||0)-(a.score||0));
+ target.innerHTML=players.map((p,i)=>
+  `<div class="player"><span>${i+1}. ${escapeHtml(p.name)}</span><b>${p.score||0} pts</b></div>`
+ ).join("");
+}
+
+function renderResults(){
+ if(timerInterval)clearInterval(timerInterval);
+ show("results");
+ const players=Object.values(roomData.players||{}).sort((a,b)=>(b.score||0)-(a.score||0));
+ $("winner").textContent=players.length?"👑 "+players[0].name+" wins!":"Game complete!";
+ renderScores($("finalScores"));
+}
+
+window.addEventListener("beforeunload",()=>{
+ if(roomRef&&roomListener)roomRef.off("value",roomListener);
+ if(timerInterval)clearInterval(timerInterval);
+});
+</script>
+</body>
+</html>
